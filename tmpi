@@ -21,7 +21,7 @@ usage() {
     echo 'LD_LIBRARY_PATH and LD_PRELOAD are passed through, so you can run it like this:'
     echo 'LD_LIBRARY_PATH="${PWD}/.libs:${LD_LIBRARY_PATH}" tmpi 16 gdb -q bin/.libs/example'
     echo ''
-    echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + k" by default)'
+    echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + &" by default)'
 }
 
 check_tools() {
