@@ -22,6 +22,7 @@ usage() {
     echo 'LD_LIBRARY_PATH="${PWD}/.libs:${LD_LIBRARY_PATH}" tmpi 16 gdb -q bin/.libs/example'
     echo ''
     echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + &" by default)'
+    echo 'Little usage hint: By default the panes in the window are synchronized. If you wish to work only with one thread maximize this pane ("C-b + z" by default) and work away on one thread. Return to all thread using the same shortcut.'
 }
 
 check_tools() {
