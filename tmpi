@@ -61,7 +61,7 @@ if [[ ${1} == runmpi ]] ; then
     done
 
     # get all the variables that mpirun starts us with so that we can pass them through.
-    mpi_vars=( $( env | grep -e MPI -e OPAL | cut -d '=' -f1 ) )
+    mpi_vars=( $( env | grep -e MPI -e OPAL -e PMIX | cut -d '=' -f1 ) )
     mpi_vars+=( "${additional_vars[@]}" )
 
     # add the variables to tmux' session environment.
