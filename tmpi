@@ -22,6 +22,8 @@ usage() {
     echo 'LD_LIBRARY_PATH="${PWD}/.libs:${LD_LIBRARY_PATH}" tmpi 16 gdb -q bin/.libs/example'
     echo ''
     echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + &" by default)'
+    echo 'You can use the environment variable TMPI_TMUX_OPTIONS to pass options to the `tmux` invocation, '
+    echo '  such as '-f ~/.tmux.conf.tmpi' to use a special tmux configuration for tmpi.
     echo 'Little usage hint: By default the panes in the window are synchronized. If you wish to work only with one thread maximize this pane ("C-b + z" by default) and work away on one thread. Return to all thread using the same shortcut.'
 }
 
@@ -46,7 +48,7 @@ if [[ -z ${TMUX} ]]; then
     # start a new one so that our window doesn't end up in some other session and we have to search it.
     # actually start a new server with '-L' to ensure that our environment carries over.
     socket=$(mktemp --dry-run tmpi.XXXX)
-    exec tmux -L ${socket} new-session "${0} ${*}"
+    exec tmux ${TMPI_TMUX_OPTIONS} -L ${socket} new-session "${0} ${*}"
 fi
 
 if [[ ${1} == runmpi ]] ; then
