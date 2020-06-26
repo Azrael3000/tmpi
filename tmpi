@@ -23,7 +23,7 @@ usage() {
     echo ''
     echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + &" by default)'
     echo 'You can use the environment variable TMPI_TMUX_OPTIONS to pass options to the `tmux` invocation, '
-    echo '  such as '-f ~/.tmux.conf.tmpi' to use a special tmux configuration for tmpi.
+    echo '  such as '-f ~/.tmux.conf.tmpi' to use a special tmux configuration for tmpi.'
     echo 'Little usage hint: By default the panes in the window are synchronized. If you wish to work only with one thread maximize this pane ("C-b + z" by default) and work away on one thread. Return to all thread using the same shortcut.'
 }
 
