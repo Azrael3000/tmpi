@@ -19,6 +19,17 @@ Parallel debugging with GDB:
 tmpi 4 gdb executable
 ```
 
+It is advisable to run gdb with a script (e.g. `script.gdb`) so you can use
+```
+tmpi 4 gdb -x script.gdb executable
+```
+
+If you have a lot of processors you want to have `set pagination off` and add the `-q` argument to gdb:
+```
+tmpi 4 gdb -q -x script.gdb executable
+```
+This avoids pagination and the output of the copyright of gdb, which can be a nuissance when you have very small tmux panes.
+
 ## Full usage:
 See `usage()` in the [script](tmpi)
 
