@@ -5,8 +5,7 @@
 
 # runs multiple MPI processes as a grid in a new tmux window and multiplexes keyboard input to all of them
 
-additional_vars=( LD_LIBRARY_PATH LD_PRELOAD )
-export "${additional_vars[@]}"
+mpirun_cmd=${MPIRUN:-mpirun}
 
 usage() {
     echo 'tmpi: Run multiple MPI processes as a grid in a new tmux window and multiplex keyboard input to all of them.'
@@ -18,9 +17,6 @@ usage() {
     echo 'The first argument is the number of processes to use, every argument after that is the commandline to run.'
     echo 'If you call this script from outside tmux and your command contains important whitespace then you need to appy two levels of quoting to preserve it.' 
     echo ''
-    echo 'LD_LIBRARY_PATH and LD_PRELOAD are passed through, so you can run it like this:'
-    echo 'LD_LIBRARY_PATH="${PWD}/.libs:${LD_LIBRARY_PATH}" tmpi 16 gdb -q bin/.libs/example'
-    echo ''
     echo 'The new window is set to remain on exit and has to be closed manually. ("C-b + &" by default)'
     echo 'You can use the environment variable TMPI_TMUX_OPTIONS to pass options to the `tmux` invocation, '
     echo '  such as '-f ~/.tmux.conf.tmpi' to use a special tmux configuration for tmpi.'
@@ -28,10 +24,10 @@ usage() {
 }
 
 check_tools() {
-    tools=( tmux mpirun )
+    tools=( tmux $mpirun_cmd reptyr )
 
     for tool in "${tools[@]}"; do
-        if ! which ${tool}; then
+        if !(type ${tool} > /dev/null 2>&1); then
             echo "You need to install ${tool} to run this script."
         fi
     done
@@ -43,7 +39,7 @@ if [[ ${#} -lt 2 ]]; then
     exit 1
 fi
 
-if [[ -z ${TMUX} ]]; then
+if [[ -z ${TMUX+x} ]]; then
     # it seems we aren't in a tmux session.
     # start a new one so that our window doesn't end up in some other session and we have to search it.
     # actually start a new server with '-L' to ensure that our environment carries over.
@@ -53,35 +49,35 @@ fi
 
 if [[ ${1} == runmpi ]] ; then
     # we are being started as one of many processes by mpirun.
+    processes=${2}
+    setpty_cmd=${3}
     shift
+    shift
+    shift
+
+    rank=${OMPI_COMM_WORLD_RANK:-${PMI_RANK:--1}}
+    if [[ $rank == -1 ]]; then
+        echo "Neither OPMI_COMM_WORLD_RANK nor PMI_RANK environment variables is not set by '$mpirun_cmd'."
+        exit 1
+    fi
 
     # start the processes in the order of their rank.
     # this avoids races, as we have to push the variables in tmux' environment.
     # it has the nice side-effect that the panes are also ordered by rank.
-    while [[ $(cat /tmp/tmpi.lock) -ne ${OMPI_COMM_WORLD_RANK} ]] ; do
+    while [[ $(cat /tmp/tmpi.lock) -ne ${rank} ]] ; do
         sleep 0.02
     done
 
-    # get all the variables that mpirun starts us with so that we can pass them through.
-    mpi_vars=( $( env | grep -e MPI -e OPAL -e PMIX | cut -d '=' -f1 ) )
-    mpi_vars+=( "${additional_vars[@]}" )
+    # temp file for forwarding /dev/pts/xxx of 'reptyr' to host
+    ptsfile=$(mktemp)
+    touch $ptsfile
+    trap "rm -f $ptsfile" EXIT
 
-    # add the variables to tmux' session environment.
-    # we can't just export them because the process will be started as a child of tmux, not us.
-    for var in "${mpi_vars[@]}"; do
-        tmux set-environment -t ${session} "${var}" "${!var}"
-    done
-
-    x=( $(tmux split-window -P -F '#{pane_pid} #{pane_id}' -t ${window} "${*}") )
-    pid=${x[0]}
-    pane=${x[1]}
-
-    for var in "${mpi_vars[@]}"; do
-        tmux set-environment -t ${session} -u "${var}"
-    done
+    # split the tmux pane and run 'reptyr -l' on it
+    pane=$(tmux split-window -P -F '#{pane_id}' -t $window bash -c "trap \"rm -f $ptsfile\" EXIT; reptyr -l | tee $ptsfile")
 
     # kill the dummy pane that opened the new window
-    [[ ${OMPI_COMM_WORLD_RANK} -eq 0 ]] && tmux kill-pane -t ${dummy} &> /dev/null
+    [[ ${rank} -eq 0 ]] && tmux kill-pane -t ${dummy} &> /dev/null
 
     # set the window to tiled mode.
     # have to do this after every new pane is spawned because otherwise the splits get
@@ -89,20 +85,76 @@ if [[ ${1} == runmpi ]] ; then
     tmux select-layout -t ${pane} tiled &> /dev/null
 
     # let the next process start
-    echo $((${OMPI_COMM_WORLD_RANK}+1)) > /tmp/tmpi.lock
+    echo $((rank+1)) > /tmp/tmpi.lock
 
-    # don't exit here as mpirun needs to be kept alive and it would also exit.
-    while [[ -d /proc/${pid} ]]; do
-        sleep 1
+    # Put quotes correctly in the command
+    cmds=()
+    for i in "$@"; do
+        if [[ $i =~ [[:space:]] ]]; then
+            i=\"$i\"
+        fi
+        cmds+=("$i")
     done
+    commands="(echo; "${cmds[@]}")"
+
+    # Barrier
+    while [[ $(cat /tmp/tmpi.lock) -ne $((processes+rank)) ]] ; do
+        sleep 0.02
+    done
+    echo $((processes+rank+1)) > /tmp/tmpi.lock
+
+    # '--follow=name' rather than '-f' to exit when the file is deleted
+    tail --follow=name $ptsfile |
+        head -1 |
+        stdbuf -oL grep 'Opened a new pty:' |
+        stdbuf -oL cut -d ' ' -f 5 |
+        xargs -I DEVPTS setsid $setpty_cmd DEVPTS bash -c "$commands"
 else
     # we are the parent and set everything up before we start ourselves a bunch of times via mpirun.
     processes=${1}
     self=${0}
     shift
 
+    # Compile a program to call 'ioctl' syscall
+    setpty_cmd=$(mktemp)
+    gcc -o $setpty_cmd -x c - <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+
+int main(int argc, char **argv) {
+  if (argc < 3) {
+    fprintf(stderr, "Usage: %s /dev/pts/XX COMMANDS\n", argv[0]);
+    exit(1);
+}
+
+  int fd = open(argv[1], O_RDWR);
+  if (fd == -1) {
+    perror("open");
+    exit(1);
+}
+
+  if (ioctl(fd, TIOCSCTTY, 0) != 0) {
+    perror("ioctl");
+    exit(1);
+}
+
+  dup2(fd, STDIN_FILENO);
+  dup2(fd, STDOUT_FILENO);
+  dup2(fd, STDERR_FILENO);
+
+  argv += 2;
+  execvp(argv[0], argv);
+  return 0;
+}
+EOF
+    trap "rm -f $setpty_cmd" EXIT
+
     # create an empty new dummy window which we sill later split up for the mpi processes.
-    x=( $(tmux new-window ${session} -P -F '#{pane_id} #{window_id} #{session_id}') )
+    x=( $(tmux new-window -P -F '#{pane_id} #{window_id} #{session_id}') )
     export dummy=${x[0]}
     export window=${x[1]}
     export session=${x[2]}
@@ -115,7 +167,7 @@ else
     echo 0 > /tmp/tmpi.lock
 
     # re-execute ourself to spawn of the processes.
-    echo mpirun -np ${processes} ${self} runmpi "${@}"
-    mpirun -np ${processes} ${self} runmpi "${@}"
+    echo $mpirun_cmd -n ${processes} ${self} runmpi $processes $setpty_cmd "${@}"
+    $mpirun_cmd -n ${processes} ${self} runmpi $processes $setpty_cmd "${@}"
 fi
 
