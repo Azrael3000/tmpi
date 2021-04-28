@@ -57,7 +57,7 @@ if [[ ${1} == runmpi ]] ; then
 
     rank=${OMPI_COMM_WORLD_RANK:-${PMI_RANK:--1}}
     if [[ $rank == -1 ]]; then
-        echo "Neither OPMI_COMM_WORLD_RANK nor PMI_RANK environment variables is not set by '$mpirun_cmd'."
+        echo "Neither OMPI_COMM_WORLD_RANK nor PMI_RANK environment variables is not set by '$mpirun_cmd'."
         exit 1
     fi
 
@@ -170,4 +170,3 @@ EOF
     echo $mpirun_cmd -n ${processes} ${self} runmpi $processes $setpty_cmd "${@}"
     $mpirun_cmd -n ${processes} ${self} runmpi $processes $setpty_cmd "${@}"
 fi
-
