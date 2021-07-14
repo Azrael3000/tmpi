@@ -47,7 +47,7 @@ if [[ -z ${TMUX} ]]; then
     # it seems we aren't in a tmux session.
     # start a new one so that our window doesn't end up in some other session and we have to search it.
     # actually start a new server with '-L' to ensure that our environment carries over.
-    socket=$(mktemp --dry-run tmpi.XXXX)
+    socket=$(mktemp -u tmpi.XXXX)
     exec tmux ${TMPI_TMUX_OPTIONS} -L ${socket} new-session "${0} ${*}"
 fi
 
