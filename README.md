@@ -4,6 +4,7 @@ Run multiple MPI processes as a grid in a new tmux window and multiplex keyboard
 ## Dependencies
 - [tmux](https://github.com/tmux/tmux/wiki)
 - [OpenMPI](https://www.open-mpi.org/)
+- [MPICH](https://www.mpich.org/)
 
 ## Installation
 Just copy the `tmpi` script somewhere in your `PATH`.
