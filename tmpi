@@ -16,7 +16,7 @@ usage() {
     echo ''
     echo 'You need to pass at least two arguments.'
     echo 'The first argument is the number of processes to use, every argument after that is the commandline to run.'
-    echo 'If you call this script from outside tmux and your command contains important whitespace then you need to appy two levels of quoting to preserve it.' 
+    echo 'If you call this script from outside tmux and your command contains important whitespace then you need to appy two levels of quoting to preserve it.'
     echo ''
     echo 'LD_LIBRARY_PATH and LD_PRELOAD are passed through, so you can run it like this:'
     echo 'LD_LIBRARY_PATH="${PWD}/.libs:${LD_LIBRARY_PATH}" tmpi 16 gdb -q bin/.libs/example'
@@ -43,6 +43,14 @@ if [[ ${#} -lt 2 ]]; then
     exit 1
 fi
 
+mpich=$(mpirun --version |grep -i HYDRA)
+openmpi=$(mpirun --version |grep -i "Open MPI")
+
+if [ -z "${mpich}" ] && [ -z "${openmpi}" ]; then
+    echo "Unknown MPI implementation. Only MPICH (and its derivatives) and OpenMPI are supported!"
+    exit 1
+fi
+
 if [[ -z ${TMUX} ]]; then
     # it seems we aren't in a tmux session.
     # start a new one so that our window doesn't end up in some other session and we have to search it.
@@ -55,15 +63,23 @@ if [[ ${1} == runmpi ]] ; then
     # we are being started as one of many processes by mpirun.
     shift
 
+    if [ -n "${mpich}" ]; then
+        mpi_rank=${PMI_ID}
+        mpi_env="-e MPI -e HYD -e PMI"
+    else
+        mpi_rank=${OMPI_COMM_WORLD_RANK}
+        mpi_env="-e MPI -e OPAL -e PMIX"
+    fi
+
     # start the processes in the order of their rank.
     # this avoids races, as we have to push the variables in tmux' environment.
     # it has the nice side-effect that the panes are also ordered by rank.
-    while [[ $(cat /tmp/tmpi.lock) -ne ${OMPI_COMM_WORLD_RANK} ]] ; do
+    while [[ $(cat /tmp/tmpi.lock) -ne ${mpi_rank} ]] ; do
         sleep 0.02
     done
 
     # get all the variables that mpirun starts us with so that we can pass them through.
-    mpi_vars=( $( env | grep -e MPI -e OPAL -e PMIX | cut -d '=' -f1 ) )
+    mpi_vars=( $( env | grep ${mpi_env} | cut -d '=' -f1 ) )
     mpi_vars+=( "${additional_vars[@]}" )
 
     # add the variables to tmux' session environment.
@@ -81,7 +97,7 @@ if [[ ${1} == runmpi ]] ; then
     done
 
     # kill the dummy pane that opened the new window
-    [[ ${OMPI_COMM_WORLD_RANK} -eq 0 ]] && tmux kill-pane -t ${dummy} &> /dev/null
+    [[ ${mpi_rank} -eq 0 ]] && tmux kill-pane -t ${dummy} &> /dev/null
 
     # set the window to tiled mode.
     # have to do this after every new pane is spawned because otherwise the splits get
@@ -89,7 +105,7 @@ if [[ ${1} == runmpi ]] ; then
     tmux select-layout -t ${pane} tiled &> /dev/null
 
     # let the next process start
-    echo $((${OMPI_COMM_WORLD_RANK}+1)) > /tmp/tmpi.lock
+    echo $((${mpi_rank}+1)) > /tmp/tmpi.lock
 
     # don't exit here as mpirun needs to be kept alive and it would also exit.
     while [[ -d /proc/${pid} ]]; do
@@ -114,8 +130,13 @@ else
     # always start with rank 0.
     echo 0 > /tmp/tmpi.lock
 
+    pmi_arg=""
+    if [ -n "${mpich}" ]; then
+        pmi_arg="-pmi-port"
+    fi
+
     # re-execute ourself to spawn of the processes.
-    echo mpirun -np ${processes} ${self} runmpi "${@}"
-    mpirun -np ${processes} ${self} runmpi "${@}"
+    echo mpirun -np ${processes} ${pmi_arg} ${self} runmpi "${@}"
+    mpirun -np ${processes} ${pmi_arg} ${self} runmpi "${@}"
 fi
 
