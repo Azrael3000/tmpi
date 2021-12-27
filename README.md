@@ -36,5 +36,6 @@ See `usage()` in the [script](tmpi)
 
 ## Contributors:
 * Benedikt Morbach
-* Arno Mayrhofer
+* Arno Mayrhofer (Azrael3000)
 * Fabio Luporini
+* Shumpei Shiina (s417-lama)
