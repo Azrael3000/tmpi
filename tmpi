@@ -8,7 +8,7 @@
 mpirun_cmd=${MPIRUN:-mpirun}
 reptyr_cmd=${REPTYR:-reptyr}
 
-mpich=$(${mpirun_cmd} --version |grep -i HYDRA)
+mpich=$(${mpirun_cmd} --version |grep -i -e HYDRA -e Intel)
 openmpi=$(${mpirun_cmd} --version |grep -i "Open MPI")
 
 if [ -z "${mpich}" ] && [ -z "${openmpi}" ]; then
@@ -85,7 +85,12 @@ if [[ ${1} == runmpi ]] ; then
     # start the processes in the order of their rank.
     # this avoids races, as we have to push the variables in tmux' environment.
     # it has the nice side-effect that the panes are also ordered by rank.
-    while [[ $(cat /tmp/tmpi.lock) -ne ${mpi_rank} ]] ; do
+    sleep 0.02
+    while [[ $(cat /tmp/tmpi_$USER.lock) -ne ${mpi_rank} ]] ; do
+        if [[ $(cat /tmp/tmpi_$USER.lock) -eq -1 ]]; then
+            echo "Error during mpi startup"
+            exit -1
+        fi
         sleep 0.02
     done
 
@@ -131,7 +136,7 @@ if [[ ${1} == runmpi ]] ; then
     tmux select-layout -t ${pane} tiled &> /dev/null
 
     # let the next process start
-    echo $((mpi_rank+1)) > /tmp/tmpi.lock
+    echo $((mpi_rank+1)) > /tmp/tmpi_$USER.lock
 
     if [ ${has_repytr} = 0 ]; then
         # Put quotes correctly in the command
@@ -145,10 +150,10 @@ if [[ ${1} == runmpi ]] ; then
         commands="(echo; "${cmds[@]}")"
 
         # Barrier
-        while [[ $(cat /tmp/tmpi.lock) -ne $((processes+mpi_rank)) ]] ; do
+        while [[ $(cat /tmp/tmpi_$USER.lock) -ne $((processes+mpi_rank)) ]] ; do
             sleep 0.02
         done
-        echo $((processes+mpi_rank+1)) > /tmp/tmpi.lock
+        echo $((processes+mpi_rank+1)) > /tmp/tmpi_$USER.lock
 
         # '--follow=name' rather than '-f' to exit when the file is deleted
         tail --follow=name $ptsfile |
@@ -223,20 +228,26 @@ EOF
     tmux set-window-option -t ${window} remain-on-exit on &> /dev/null
 
     # always start with rank 0.
-    echo 0 > /tmp/tmpi.lock
+    echo 0 > /tmp/tmpi_$USER.lock
+
+    mpi_arg=""
+    if [ -n "${mpich}" ]; then
+        mpi_arg="" # used to be -pmi-port
+    else
+        mpi_arg="--oversubscribe"
+    fi
 
     if [ ${has_reptyr} = 0 ]; then
         # re-execute ourself to spawn of the processes.
-        echo $mpirun_cmd -n ${processes} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
-        $mpirun_cmd -oversubscribe -n ${processes} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
+        echo $mpirun_cmd -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
+        $mpirun_cmd -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
     else
-        pmi_arg=""
-        if [ -n "${mpich}" ]; then
-            pmi_arg="-pmi-port"
-        fi
-
         # re-execute ourself to spawn of the processes.
-        echo mpirun --oversubscribe -np ${processes} ${pmi_arg} ${self} runmpi ${has_reptyr} "${@}"
-        mpirun --oversubscribe -np ${processes} ${pmi_arg} ${self} runmpi ${has_reptyr} "${@}"
+        echo mpirun -np ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} "${@}"
+        mpirun -np ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} "${@}"
+    fi
+    if [[ $? -ne 0 ]]; then
+        echo -1 > /tmp/tmpi_$USER.lock
+        tmux kill-pane -t ${dummy} &> /dev/null
     fi
 fi
