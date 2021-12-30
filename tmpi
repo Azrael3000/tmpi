@@ -34,7 +34,7 @@ usage() {
 
 check_tools() {
     # reptyr must be last in the following list
-    tools=( tmux $mpirun_cmd $reptyr_cmd )
+    tools=( tmux ${mpirun_cmd} ${reptyr_cmd} )
 
     for tool in "${tools[@]}"; do
         if !(type ${tool} > /dev/null 2>&1); then
@@ -66,19 +66,18 @@ fi
 
 if [[ ${1} == runmpi ]] ; then
     # we are being started as one of many processes by mpirun.
-    has_repytr=${2}
-    if [ ${has_repytr} = 0 ]; then
-        processes=${3}
-        setpty_cmd=${4}
-        shift
-        shift
-    fi
+    has_reptyr=${2}
+    # the next two will contain "1" in case has_reptyr is false (i.e. 1)
+    processes=${3}
+    setpty_cmd=${4}
+    shift
+    shift
     shift
     shift
 
     mpi_rank=${OMPI_COMM_WORLD_RANK:-${PMI_RANK:--1}}
-    if [[ $mpi_rank == -1 ]]; then
-        echo "Neither OMPI_COMM_WORLD_RANK nor PMI_RANK environment variables is not set by '$mpirun_cmd'."
+    if [[ ${mpi_rank} == -1 ]]; then
+        echo "Neither OMPI_COMM_WORLD_RANK nor PMI_RANK environment variables is not set by '${mpirun_cmd}'."
         exit 1
     fi
 
@@ -86,22 +85,22 @@ if [[ ${1} == runmpi ]] ; then
     # this avoids races, as we have to push the variables in tmux' environment.
     # it has the nice side-effect that the panes are also ordered by rank.
     sleep 0.02
-    while [[ $(cat /tmp/tmpi_$USER.lock) -ne ${mpi_rank} ]] ; do
-        if [[ $(cat /tmp/tmpi_$USER.lock) -eq -1 ]]; then
+    while [[ $(cat /tmp/tmpi_${USER}.lock) -ne ${mpi_rank} ]] ; do
+        if [[ $(cat /tmp/tmpi_${USER}.lock) -eq -1 ]]; then
             echo "Error during mpi startup"
             exit -1
         fi
         sleep 0.02
     done
 
-    if [ ${has_repytr} = 0 ]; then
+    if [ ${has_reptyr} = 0 ]; then
         # temp file for forwarding /dev/pts/xxx of 'reptyr' to host
         ptsfile=$(mktemp)
-        touch $ptsfile
-        trap "rm -f $ptsfile" EXIT
+        touch ${ptsfile}
+        trap "rm -f ${ptsfile}" EXIT
 
         # split the tmux pane and run 'reptyr -l' on it
-        pane=$(tmux split-window -P -F '#{pane_id}' -t $window bash -c "trap \"rm -f $ptsfile\" EXIT; $reptyr_cmd -l | tee $ptsfile")
+        pane=$(tmux split-window -P -F '#{pane_id}' -t ${window} bash -c "trap \"rm -f ${ptsfile}\" EXIT; ${reptyr_cmd} -l | tee ${ptsfile}")
     else
         if [ -n "${mpich}" ]; then
             mpi_env="-e MPI -e HYD -e PMI"
@@ -136,9 +135,9 @@ if [[ ${1} == runmpi ]] ; then
     tmux select-layout -t ${pane} tiled &> /dev/null
 
     # let the next process start
-    echo $((mpi_rank+1)) > /tmp/tmpi_$USER.lock
+    echo $((mpi_rank+1)) > /tmp/tmpi_${USER}.lock
 
-    if [ ${has_repytr} = 0 ]; then
+    if [ ${has_reptyr} = 0 ]; then
         # Put quotes correctly in the command
         cmds=()
         for i in "$@"; do
@@ -150,21 +149,21 @@ if [[ ${1} == runmpi ]] ; then
         commands="(echo; "${cmds[@]}")"
 
         # Barrier
-        while [[ $(cat /tmp/tmpi_$USER.lock) -ne $((processes+mpi_rank)) ]] ; do
+        while [[ $(cat /tmp/tmpi_${USER}.lock) -ne $((processes+mpi_rank)) ]] ; do
             sleep 0.02
         done
-        echo $((processes+mpi_rank+1)) > /tmp/tmpi_$USER.lock
+        echo $((processes+mpi_rank+1)) > /tmp/tmpi_${USER}.lock
 
         # '--follow=name' rather than '-f' to exit when the file is deleted
-        tail --follow=name $ptsfile |
+        tail --follow=name ${ptsfile} |
             head -1 |
             stdbuf -oL grep 'Opened a new pty:' |
             stdbuf -oL cut -d ' ' -f 5 |
-            xargs -I DEVPTS setsid $setpty_cmd DEVPTS bash -c "$commands"
+            xargs -I DEVPTS setsid ${setpty_cmd} DEVPTS bash -c "${commands}"
     else
         # don't exit here as mpirun needs to be kept alive and it would also exit.
         while [[ -d /proc/${pid} ]]; do
-            sleep 1
+            sleep 0.02
         done
     fi
 else
@@ -180,7 +179,7 @@ else
     if [ "${has_reptyr}" = 0 ]; then
         # Compile a program to call 'ioctl' syscall
         setpty_cmd=$(mktemp)
-        gcc -o $setpty_cmd -x c - <<EOF
+        gcc -o ${setpty_cmd} -x c - <<EOF
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -214,7 +213,7 @@ int main(int argc, char **argv) {
   return 0;
 }
 EOF
-        trap "rm -f $setpty_cmd" EXIT
+        trap "rm -f ${setpty_cmd}" EXIT
     fi
 
     # create an empty new dummy window which we sill later split up for the mpi processes.
@@ -228,7 +227,8 @@ EOF
     tmux set-window-option -t ${window} remain-on-exit on &> /dev/null
 
     # always start with rank 0.
-    echo 0 > /tmp/tmpi_$USER.lock
+    echo 0 > /tmp/tmpi_${USER}.lock
+    trap "rm -f /tmp/tmpi_${USER}.lock" EXIT
 
     mpi_arg=""
     if [ -n "${mpich}" ]; then
@@ -237,17 +237,11 @@ EOF
         mpi_arg="--oversubscribe"
     fi
 
-    if [ ${has_reptyr} = 0 ]; then
-        # re-execute ourself to spawn of the processes.
-        echo $mpirun_cmd -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
-        $mpirun_cmd -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} $processes $setpty_cmd "${@}"
-    else
-        # re-execute ourself to spawn of the processes.
-        echo mpirun -np ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} "${@}"
-        mpirun -np ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} "${@}"
-    fi
+    # re-execute ourself to spawn of the processes.
+    echo ${mpirun_cmd} -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} ${has_reptyr/0/${processes}} ${has_reptyr/0/${setpty_cmd}} "${@}"
+    ${mpirun_cmd} -n ${processes} ${mpi_arg} ${self} runmpi ${has_reptyr} ${has_reptyr/0/${processes}} ${has_reptyr/0/${setpty_cmd}} "${@}"
     if [[ $? -ne 0 ]]; then
-        echo -1 > /tmp/tmpi_$USER.lock
+        echo -1 > /tmp/tmpi_${USER}.lock
         tmux kill-pane -t ${dummy} &> /dev/null
     fi
 fi
