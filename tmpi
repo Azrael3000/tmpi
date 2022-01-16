@@ -8,13 +8,15 @@
 mpirun_cmd=${MPIRUN:-mpirun}
 reptyr_cmd=${REPTYR:-reptyr}
 
-mpich=$(${mpirun_cmd} --version |grep -i -e HYDRA -e Intel)
-openmpi=$(${mpirun_cmd} --version |grep -i "Open MPI")
+check_mpirun() {
+    mpich=$(${mpirun_cmd} --version |grep -i -e HYDRA -e Intel)
+    openmpi=$(${mpirun_cmd} --version |grep -i "Open MPI")
 
-if [ -z "${mpich}" ] && [ -z "${openmpi}" ]; then
-    echo "Unknown MPI implementation. Only MPICH (and its derivatives) and OpenMPI are supported!"
-    exit 1
-fi
+    if [ -z "${mpich}" ] && [ -z "${openmpi}" ]; then
+        echo "Unknown MPI implementation. Only MPICH (and its derivatives) and OpenMPI are supported!"
+        exit 1
+    fi
+}
 
 usage() {
     echo 'tmpi: Run multiple MPI processes as a grid in a new tmux window and multiplex keyboard input to all of them.'
@@ -47,6 +49,7 @@ check_tools() {
             fi
         fi
     done
+    check_mpirun
     return 0
 }
 
