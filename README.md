@@ -3,9 +3,9 @@ Run multiple MPI processes as a grid in a new tmux window and multiplex keyboard
 
 ## Dependencies
 - [tmux](https://github.com/tmux/tmux/wiki)
-- [Reptyr (optional, recommended)](https://github.com/nelhage/reptyr) 
 - [OpenMPI](https://www.open-mpi.org/)
 - [MPICH](https://www.mpich.org/)
+- [Reptyr (optional, recommended)](https://github.com/nelhage/reptyr) 
 
 ## Installation
 Just copy the `tmpi` script somewhere in your `PATH`.
@@ -34,6 +34,9 @@ This avoids pagination and the output of the copyright of gdb, which can be a nu
 
 ## Full usage:
 See `usage()` in the [script](tmpi)
+
+## Known issues:
+When running without `reptyr` `tmpi` might fail without any error message. Installing `reptyr` should solve the issue.
 
 ## Contributors:
 * Benedikt Morbach
