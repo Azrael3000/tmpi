@@ -14,7 +14,7 @@ One-liner:
 curl https://raw.githubusercontent.com/Azrael3000/tmpi/master/tmpi -o /somewhere/in/your/path/tmpi
 ```
 
-## Example usage:
+## Example usage
 
 Parallel debugging with GDB:
 ```
@@ -32,13 +32,13 @@ tmpi 4 gdb -q -x script.gdb executable
 ```
 This avoids pagination and the output of the copyright of gdb, which can be a nuissance when you have very small tmux panes.
 
-## Full usage:
+## Full usage
 See `usage()` in the [script](tmpi)
 
-## Known issues:
+## Known issues
 When running without `reptyr` `tmpi` might fail without any error message. Installing `reptyr` should solve the issue.
 
-## Contributors:
+## Contributors
 * Benedikt Morbach
 * Arno Mayrhofer (Azrael3000)
 * Fabio Luporini
